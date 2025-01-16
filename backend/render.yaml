@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: gas-news-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gas-news-db
+          property: connectionString
+      - key: NEWS_API_KEY
+        sync: false
+
+databases:
+  - name: gas-news-db
+    databaseName: gas_news
+    user: gas_news_user
