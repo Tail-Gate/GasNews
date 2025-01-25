@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .database import engine, SessionLocal
 from . import models, crud, schemas
 from typing import List
-from .services.news_fetcher import NewsFetcher
+from .services.news_sources import NewsAPISource,NewsDataSource,CurrentsSource,GNewsSource,NewsData,NewsAggregator
 from .services.processor import NewsProcessor
 from .services.notifier import NewsNotifier
 import os
@@ -14,10 +14,20 @@ from datetime import datetime
 # Load environment variables
 load_dotenv()
 
+# Initialize news sources
+news_sources = [
+    NewsAPISource(os.getenv("NEWS_API_KEY")),
+    NewsDataSource(os.getenv("NEWSCATCHER_API_KEY")),
+    CurrentsSource(os.getenv("CURRENTS_API_KEY")),
+    GNewsSource(os.getenv("GNEWS_API_KEY")),
+    NewsData(os.getenv("NEWSDATA_API_KEY"))
+]
+
 # Initialize services
-news_fetcher = NewsFetcher(os.getenv("NEWS_API_KEY"))
+news_aggregator = NewsAggregator(news_sources)
 news_processor = NewsProcessor()
 news_notifier = NewsNotifier()
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -83,6 +93,7 @@ def create_bookmark(
     db: Session = Depends(get_db)
 ):
     return crud.create_bookmark(db, user_id=bookmark_data.user_id, article_id=article_id)
+
 @app.get("/bookmarks/{user_id}", response_model=List[schemas.BookmarkResponse])
 def read_user_bookmarks(user_id: int, db: Session = Depends(get_db)):
     return crud.get_user_bookmarks(db, user_id=user_id)
@@ -98,8 +109,8 @@ def delete_user_bookmark(article_id: int, user_id: int, db: Session = Depends(ge
 @app.get("/fetch-news/", response_model=List[schemas.ArticleResponse])
 async def fetch_news(db: Session = Depends(get_db)):
     try:
-        # 1. Fetch raw news articles
-        raw_articles = await news_fetcher.fetch_news()
+        # 1. Fetch raw news articles from all sources
+        raw_articles = await news_aggregator.fetch_all_news()
         
         # 2. Process and clean the articles
         processed_articles = news_processor.process_articles(raw_articles)
@@ -126,3 +137,8 @@ async def fetch_news(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error fetching news: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Add endpoint to check news sources status
+@app.get("/news-sources/status")
+def get_sources_status():
+    return news_aggregator.get_source_status()
