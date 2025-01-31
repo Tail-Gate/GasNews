@@ -13,25 +13,25 @@ class CurrentsSource(BaseNewsSource):
         # Override search groups for Currents API syntax
         self.search_groups = [
             # Major Companies
-            "[Cheniere Energy] OR [EQT Corporation] OR [Kinder Morgan] OR [Williams Companies] OR [Dominion Energy]",
+            "Cheniere Energy,EQT Corporation,Kinder Morgan,Williams Companies,Dominion Energy",
             
-            # Production Regions with context
-            "[Permian Basin] natural gas OR [Marcellus shale] gas OR [Haynesville] gas OR [Gulf Coast] LNG",
+            # Production Regions
+            "Permian Basin,Marcellus shale,Haynesville,Gulf Coast LNG",
             
             # Market & Prices
-            "[Henry Hub] gas price OR [natural gas] prices US market",
+            "Henry Hub gas prices,natural gas prices,US market",
             
             # Infrastructure & Exports
-            "[natural gas] terminals US OR [LNG] exports United States",
+            "natural gas terminals,LNG exports,United States",
             
             # Regulatory
-            "[FERC] natural gas OR [EIA] gas report",
+            "FERC gas,EIA gas report",
             
             # Storage & Demand
-            "[natural gas] storage US OR [gas] demand winter OR [gas] demand summer",
+            "natural gas storage,gas demand",
             
             # General Industry
-            "[US natural gas] OR [LNG exports] OR [gas pipeline] OR [gas production] US"
+            "US natural gas,LNG exports,gas pipeline,gas production"
         ]
 
     def _can_make_request(self) -> bool:
@@ -47,10 +47,19 @@ class CurrentsSource(BaseNewsSource):
             print("Currents API: Daily limit reached. Waiting for reset...")
             return []
 
+        # Calculate date range (last 7 days)
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=7)
+
         params = {
+            "apiKey": self.api_key,
             "keywords": query,
             "language": "en",
-            "apiKey": self.api_key
+            "country": "US",  # Focus on US news
+            "start_date": start_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end_date": end_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "type": "1",  # News type
+            "page_size": 200  # Maximum results per request
         }
 
         try:
@@ -60,15 +69,18 @@ class CurrentsSource(BaseNewsSource):
 
                 if response.status == 200:
                     data = await response.json()
-                    news_articles = data.get('news', [])
-                    return [self.normalize_article(article) for article in news_articles]
+                    if 'news' in data:
+                        return [self.normalize_article(article) for article in data['news']]
+                    else:
+                        print(f"Currents API: No news field in response")
+                        return []
                 else:
-                    print(f"Currents API error: {response.status}")
+                    error_data = await response.text()
+                    print(f"Currents API error {response.status}: {error_data}")
                     return []
 
         except Exception as e:
             print(f"Currents API Error for '{query[:50]}...': {str(e)}")
-            await asyncio.sleep(1)  # Brief pause on error
             return []
 
     async def fetch_news(self) -> List[Dict]:

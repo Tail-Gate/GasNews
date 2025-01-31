@@ -1,18 +1,21 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException,APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from .database import engine, SessionLocal
+from .database import engine, SessionLocal,get_db
 from . import models, crud, schemas
 from typing import List
 from .services.news_sources import NewsAPISource,NewsDataSource,CurrentsSource,GNewsSource,NewsData,NewsAggregator
 from .services.processor import NewsProcessor
 from .services.notifier import NewsNotifier
+from .services.content_processing.embeddings import EmbeddingsService
 import os
 from dotenv import load_dotenv
 from datetime import datetime
 
 # Load environment variables
 load_dotenv()
+
+
 
 # Initialize news sources
 news_sources = [
@@ -32,6 +35,87 @@ news_notifier = NewsNotifier()
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# Initialize router
+router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+
+# Initialize services
+embeddings_service = EmbeddingsService(api_key=os.getenv("DEEPSEEK_API_KEY"))
+
+@router.get("/test-embedding/{article_id}")
+async def test_embedding(
+    article_id: int,
+    db: Session = Depends(get_db)
+):
+    """Test endpoint to generate and view embedding for an article"""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    
+    embedding = await embeddings_service.create_embedding(db, article)
+    return {
+        "article_id": article_id,
+        "embedding_created": embedding is not None,
+        "embedding_length": len(embedding.embedding_vector) if embedding else None
+    }
+
+@router.get("/similar/{article_id}")
+async def get_similar_articles(
+    article_id: int,
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    """Get similar articles based on embeddings"""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    
+    similar_articles = await embeddings_service.get_similar_articles(
+        db, article, limit=limit
+    )
+    
+    return [
+        {
+            "article_id": art.id,
+            "title": art.title,
+            "similarity_score": score,
+            "url": art.url
+        }
+        for art, score in similar_articles
+    ]
+
+@router.post("/{article_id}/feedback")
+async def submit_feedback(
+    article_id: int,
+    feedback: schemas.RecommendationFeedback,
+    db: Session = Depends(get_db)
+):
+    """Submit feedback for a recommendation"""
+    # Update recommendation history with feedback
+    recommendation = db.query(models.RecommendationHistory).filter(
+        models.RecommendationHistory.recommended_article_id == article_id,
+        models.RecommendationHistory.user_id == feedback.user_id
+    ).first()
+    
+    if recommendation:
+        if feedback.feedback_type == "thumbs_up":
+            recommendation.was_clicked = True
+            recommendation.was_bookmarked = True
+        db.commit()
+    
+    return {"status": "success"}
+
+@router.get("/refresh/{user_id}")
+async def refresh_user_recommendations(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Manually trigger a recommendation refresh for a user"""
+    success = await embeddings_service.refresh_recommendations(db, user_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to refresh recommendations")
+    return {"status": "success"}
+
 
 # CORS middleware
 app.add_middleware(

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 
 class BaseNewsSource(ABC):
@@ -50,6 +50,6 @@ class BaseNewsSource(ABC):
             'content': article.get('content') or article.get('description', 'No content available'),
             'url': article.get('url', ''),
             'source': article.get('source', {}).get('name', 'Unknown source'),
-            'published_date': article.get('publishedAt') or article.get('published_date', datetime.now(datetime.UTC).isoformat()),
+            'published_date': article.get('publishedAt') or article.get('published_date', datetime.now(timezone.utc).isoformat()),
             'image_url': article.get('urlToImage') or article.get('image_url'),
         }

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
 from datetime import datetime
+from enum import Enum
 
 # User Schemas
 class UserBase(BaseModel):
@@ -81,3 +82,17 @@ class ArticleResponse(Article):
 
 class BookmarkResponse(Bookmark):
     article: Article
+
+class FeedbackType(str, Enum):
+    thumbs_up = "thumbs_up"
+    thumbs_down = "thumbs_down"
+
+class RecommendationFeedback(BaseModel):
+    user_id: int
+    feedback_type: FeedbackType
+    
+class RecommendationResponse(BaseModel):
+    article_id: int
+    title: str
+    similarity_score: float
+    url: str

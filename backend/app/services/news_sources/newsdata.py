@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 import aiohttp
 import asyncio
 from .base import BaseNewsSource
+import os
 
 class NewsData(BaseNewsSource):
     def __init__(self, api_key: str):
@@ -12,26 +13,23 @@ class NewsData(BaseNewsSource):
         
         # Override search groups for NewsData.io syntax
         self.search_groups = [
-            # Major Companies
-            "(Cheniere Energy) OR (EQT Corporation) OR (Kinder Morgan) OR (Williams Companies) OR (Dominion Energy)",
+            # Major Companies - proper AND/OR syntax
+            '("Cheniere Energy" OR "EQT Corporation" OR "Kinder Morgan") AND "natural gas"',
             
-            # Production Regions
-            "(Permian Basin AND gas) OR (Marcellus shale AND gas) OR (Haynesville AND gas) OR (Gulf Coast AND LNG)",
+            # Production Regions - proper AND/OR syntax
+            '"Permian Basin" AND gas OR "Marcellus shale" AND gas OR "Haynesville" AND gas',
             
-            # Market & Prices
-            "(Henry Hub AND gas AND prices) OR (natural gas AND prices AND US)",
+            # Market & Prices - proper AND/OR syntax
+            '"Henry Hub" AND "gas prices" OR "natural gas" AND prices AND US',
             
             # Infrastructure & Exports
-            "(gas terminals AND US) OR (natural gas AND export AND US) OR (LNG AND exports AND United States)",
+            '"natural gas" AND (terminals OR exports) AND US',
             
             # Regulatory
-            "(FERC AND gas) OR (EIA AND gas AND report)",
+            'FERC AND "natural gas" OR "EIA" AND "gas report"',
             
             # Storage & Demand
-            "(gas AND storage AND US) OR (gas AND demand AND winter) OR (gas AND demand AND summer)",
-            
-            # General Industry
-            "(US AND natural gas) OR (LNG AND exports) OR (gas AND pipeline) OR (gas AND production AND US)"
+            '"natural gas" AND (storage OR demand) AND US'
         ]
 
     def _can_make_request(self) -> bool:
@@ -49,10 +47,9 @@ class NewsData(BaseNewsSource):
 
         params = {
             "apikey": self.api_key,
-            "q": query,
-            "language": "en",
-            "country": "us",
-            "page": page
+            "q": query,          # Using their exact query syntax
+            "language": "en",    
+            "country": "us"      # Focusing on US news
         }
 
         try:
@@ -106,7 +103,7 @@ class NewsData(BaseNewsSource):
             'content': article.get('description', 'No content available'),
             'url': article.get('link', ''),
             'source': article.get('source_id', 'Unknown source'),
-            'published_date': article.get('pubDate', datetime.now(datetime.UTC).isoformat()),
+            'published_date': article.get('pubDate', datetime.now(timezone.utc).isoformat()),
             'image_url': article.get('image_url', None)
         }
 
