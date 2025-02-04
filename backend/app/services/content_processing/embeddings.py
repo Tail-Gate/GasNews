@@ -7,12 +7,15 @@ from app import models
 import json
 import asyncio
 from functools import lru_cache
-from openai import OpenAI
+from openai import OpenAI,OpenAIError
 
 class EmbeddingsService:
     def __init__(self, api_key: str):
+        if not api_key:
+            raise ValueError("OpenAI API key is not set")
+            
         self.client = OpenAI(api_key=api_key)
-        self.model_version = "text-embedding-ada-002"
+        self.model_version = "text-embedding-3-small"
         self.logger = logging.getLogger(__name__)
         
         # Configure logging
@@ -20,33 +23,52 @@ class EmbeddingsService:
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
+        
+        self.logger.info("EmbeddingsService initialized with model: %s", self.model_version)
 
     async def _get_embedding(self, text: str) -> List[float]:
-        """Get embedding using DeepSeek's OpenAI-compatible API"""
+        """Get embedding using OpenAI's API"""
         try:
+            self.logger.info(f"Requesting embedding for text of length: {len(text)}")
+            
             response = await self.client.embeddings.create(
                 model=self.model_version,
-                input=text
+                input=text,
+                encoding_format="float"
             )
+            
+            self.logger.info("Successfully generated embedding")
             return response.data[0].embedding
-        except Exception as e:
-            self.logger.error(f"Error getting embedding: {str(e)}")
+            
+        except OpenAIError as e:
+            self.logger.error(f"OpenAI API error: {str(e)}")
             raise
-
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _get_embedding: {str(e)}")
+            raise
 
     def _prepare_article_text(self, article: models.Article) -> str:
         """Prepare article text for embedding"""
-        return f"{article.title}\n\n{article.content}"
+        try:
+            text = f"{article.title}\n\n{article.content}"
+            self.logger.info(f"Prepared text for article {article.id}, length: {len(text)}")
+            return text
+        except Exception as e:
+            self.logger.error(f"Error preparing article text: {str(e)}")
+            raise
 
     async def create_embedding(self, db: Session, article: models.Article) -> Optional[models.ArticleEmbedding]:
         """Create and store embedding for an article"""
         try:
+            self.logger.info(f"Starting embedding creation for article {article.id}")
+            
             # Check if embedding already exists
             existing = db.query(models.ArticleEmbedding).filter(
                 models.ArticleEmbedding.article_id == article.id
             ).first()
             
             if existing:
+                self.logger.info(f"Found existing embedding for article {article.id}")
                 return existing
 
             # Get embedding
@@ -64,12 +86,13 @@ class EmbeddingsService:
             db.commit()
             db.refresh(embedding)
             
+            self.logger.info(f"Successfully created embedding for article {article.id}")
             return embedding
             
         except Exception as e:
             self.logger.error(f"Error creating embedding for article {article.id}: {str(e)}")
             db.rollback()
-            return None
+            raise
 
     def compute_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """Compute cosine similarity between two vectors"""
