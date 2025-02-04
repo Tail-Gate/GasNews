@@ -8,53 +8,67 @@ import json
 import asyncio
 from functools import lru_cache
 from openai import OpenAI,OpenAIError
+import unicodedata
+import re
 
 class EmbeddingsService:
     def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("OpenAI API key is not set")
-            
         self.client = OpenAI(api_key=api_key)
         self.model_version = "text-embedding-3-small"
         self.logger = logging.getLogger(__name__)
         
-        # Configure logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        
-        self.logger.info("EmbeddingsService initialized with model: %s", self.model_version)
 
-    async def _get_embedding(self, text: str) -> List[float]:
-        """Get embedding using OpenAI's API"""
+    def _clean_text(self, text: str) -> str:
+        """Clean text for embedding"""
+        try:
+            text = unicodedata.normalize('NFKD', text)
+            text = re.sub(r'[^\w\s.,!?-]', ' ', text)
+            text = ' '.join(text.split())
+            return text
+        except Exception as e:
+            self.logger.error(f"Error cleaning text: {str(e)}")
+            return text
+
+    def _prepare_article_text(self, article: models.Article) -> str:
+        """Prepare article text for embedding"""
+        try:
+            title = self._clean_text(article.title)
+            content = self._clean_text(article.content) if article.content else ""
+            text = f"{title}\n\n{content}"
+            self.logger.info(f"Prepared text for article {article.id}, length: {len(text)}")
+            return text
+        except Exception as e:
+            self.logger.error(f"Error preparing article text: {str(e)}")
+            raise
+
+    def _get_embedding(self, text: str) -> Optional[List[float]]:
+        """Get embedding using OpenAI's API - now synchronous"""
         try:
             self.logger.info(f"Requesting embedding for text of length: {len(text)}")
             
-            response = await self.client.embeddings.create(
+            if not text.strip():
+                self.logger.error("Empty text provided for embedding")
+                return None
+            
+            response = self.client.embeddings.create(  # Removed await
                 model=self.model_version,
                 input=text,
                 encoding_format="float"
             )
             
+            if not response.data:
+                self.logger.error("No embedding data in response")
+                return None
+                
             self.logger.info("Successfully generated embedding")
             return response.data[0].embedding
             
-        except OpenAIError as e:
-            self.logger.error(f"OpenAI API error: {str(e)}")
-            raise
         except Exception as e:
-            self.logger.error(f"Unexpected error in _get_embedding: {str(e)}")
-            raise
-
-    def _prepare_article_text(self, article: models.Article) -> str:
-        """Prepare article text for embedding"""
-        try:
-            text = f"{article.title}\n\n{article.content}"
-            self.logger.info(f"Prepared text for article {article.id}, length: {len(text)}")
-            return text
-        except Exception as e:
-            self.logger.error(f"Error preparing article text: {str(e)}")
+            self.logger.error(f"Error getting embedding: {str(e)}")
             raise
 
     async def create_embedding(self, db: Session, article: models.Article) -> Optional[models.ArticleEmbedding]:
@@ -62,7 +76,6 @@ class EmbeddingsService:
         try:
             self.logger.info(f"Starting embedding creation for article {article.id}")
             
-            # Check if embedding already exists
             existing = db.query(models.ArticleEmbedding).filter(
                 models.ArticleEmbedding.article_id == article.id
             ).first()
@@ -71,11 +84,17 @@ class EmbeddingsService:
                 self.logger.info(f"Found existing embedding for article {article.id}")
                 return existing
 
-            # Get embedding
             text = self._prepare_article_text(article)
-            embedding_vector = await self._get_embedding(text)
+            if not text.strip():
+                self.logger.error(f"No valid text content for article {article.id}")
+                return None
 
-            # Create embedding record
+            # Get embedding - now synchronous
+            embedding_vector = self._get_embedding(text)  # Removed await
+            if not embedding_vector:
+                self.logger.error(f"Failed to generate embedding for article {article.id}")
+                return None
+
             embedding = models.ArticleEmbedding(
                 article_id=article.id,
                 embedding_vector=embedding_vector,
@@ -92,7 +111,7 @@ class EmbeddingsService:
         except Exception as e:
             self.logger.error(f"Error creating embedding for article {article.id}: {str(e)}")
             db.rollback()
-            raise
+            return None
 
     def compute_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """Compute cosine similarity between two vectors"""
