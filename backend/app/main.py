@@ -9,6 +9,7 @@ from .services.processor import NewsProcessor
 from .services.notifier import NewsNotifier
 from .services.content_processing.embeddings import EmbeddingsService
 import os
+
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from sqlalchemy import func, case  
@@ -42,66 +43,75 @@ app = FastAPI()
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 # Initialize services
-embeddings_service = EmbeddingsService(api_key=os.getenv("DEEPSEEK_API_KEY"))
+embeddings_service = EmbeddingsService(api_key=os.getenv("OPENAI_API_KEY"))
 
 @router.get("/test-embedding/{article_id}")
 async def test_embedding_pipeline(
     article_id: int,
     db: Session = Depends(get_db)
 ):
-    """Test the complete embedding pipeline for an article"""
+    """Test the complete embedding pipeline for an article with detailed error reporting"""
     try:
-        # 1. Get the article
-        article = db.query(models.Article).filter(models.Article.id == article_id).first()
-        if not article:
-            raise HTTPException(status_code=404, detail="Article not found")
-            
-        # 2. Generate embedding
-        start_time = datetime.now()
-        embedding = await embeddings_service.create_embedding(db, article)
-        generation_time = (datetime.now() - start_time).total_seconds()
-        
-        if not embedding:
+        # 1. Verify API key is accessible
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
             return {
                 "status": "error",
-                "message": "Failed to generate embedding",
+                "message": "OpenAI API key not found in environment",
                 "article_id": article_id
             }
-            
-        # 3. Get similar articles
-        similar_articles = await embeddings_service.get_similar_articles(
-            db, article, limit=3
-        )
-        
-        return {
-            "status": "success",
-            "article": {
-                "id": article.id,
-                "title": article.title,
-                "source": article.source
-            },
-            "embedding_stats": {
-                "vector_length": len(embedding.embedding_vector),
-                "generation_time_seconds": generation_time,
-                "model_version": embedding.model_version
-            },
-            "similar_articles": [
-                {
-                    "id": art.id,
-                    "title": art.title,
-                    "similarity_score": score,
-                    "source": art.source
-                }
-                for art, score in similar_articles
-            ]
+
+        # 2. Get the article
+        article = db.query(models.Article).filter(models.Article.id == article_id).first()
+        if not article:
+            return {
+                "status": "error",
+                "message": "Article not found",
+                "article_id": article_id
+            }
+
+        # 3. Print article details for debugging
+        article_details = {
+            "id": article.id,
+            "title": article.title,
+            "content_preview": article.content[:100] if article.content else None,
+            "has_content": bool(article.content)
         }
+            
+        # 4. Try to generate embedding with full error capture
+        try:
+            embedding = await embeddings_service.create_embedding(db, article)
+            if embedding:
+                return {
+                    "status": "success",
+                    "article": article_details,
+                    "embedding_info": {
+                        "vector_length": len(embedding.embedding_vector),
+                        "model_version": embedding.model_version
+                    }
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "Embedding creation returned None",
+                    "article": article_details
+                }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_type": type(e).__name__,
+                "article": article_details
+            }
+            
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e),
+            "message": f"Pipeline error: {str(e)}",
+            "error_type": type(e).__name__,
             "article_id": article_id
         }
-
+    
 @router.get("/embedding-stats")
 async def get_embedding_stats(db: Session = Depends(get_db)):
     """Get statistics about embeddings in the system"""
