@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import logging
 from sqlalchemy.orm import Session
-from . import models
+from app import models
 import json
 import asyncio
 from functools import lru_cache
