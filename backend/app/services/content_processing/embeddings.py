@@ -11,12 +11,8 @@ from openai import OpenAI
 
 class EmbeddingsService:
     def __init__(self, api_key: str):
-        # Initialize OpenAI client with DeepSeek configuration
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com/v1"  # Using v1 endpoint for OpenAI compatibility
-        )
-        self.model_version = "deepseek-chat"  # Using DeepSeek-V3
+        self.client = OpenAI(api_key=api_key)
+        self.model_version = "text-embedding-ada-002"
         self.logger = logging.getLogger(__name__)
         
         # Configure logging
