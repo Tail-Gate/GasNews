@@ -51,6 +51,131 @@ router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 # Initialize services
 embeddings_service = EmbeddingsService(api_key=os.getenv("OPENAI_API_KEY"))
 
+@router.post("/generate-all-embeddings")
+async def generate_all_embeddings(
+    batch_size: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Generate embeddings for all articles that don't have them yet"""
+    try:
+        # Get total count of articles needing embeddings
+        need_embeddings = db.query(models.Article)\
+            .outerjoin(models.ArticleEmbedding)\
+            .filter(models.ArticleEmbedding.id == None)\
+            .all()
+        
+        total_pending = len(need_embeddings)
+        if total_pending == 0:
+            return {
+                "status": "success",
+                "message": "No articles found needing embeddings"
+            }
+        
+        # Get total article count for percentage calculation
+        total_articles = db.query(models.Article).count()
+        existing_embeddings = db.query(models.ArticleEmbedding).count()
+        
+        # Process articles
+        successful = 0
+        failed = 0
+        errors = []
+        start_time = datetime.now()
+        
+        for i in range(0, total_pending, batch_size):
+            batch = need_embeddings[i:i + batch_size]
+            batch_start_time = datetime.now()
+            
+            for article in batch:
+                try:
+                    embedding = await embeddings_service.create_embedding(db, article)
+                    if embedding:
+                        successful += 1
+                    else:
+                        failed += 1
+                        errors.append({
+                            "article_id": article.id,
+                            "error": "Failed to generate embedding"
+                        })
+                except Exception as e:
+                    failed += 1
+                    errors.append({
+                        "article_id": article.id,
+                        "error": str(e)
+                    })
+            
+            # Calculate progress and timing metrics
+            processed = successful + failed
+            progress = (processed / total_pending) * 100
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+            batch_time = (datetime.now() - batch_start_time).total_seconds()
+            
+            # Update progress in database
+            progress_record = {
+                "timestamp": datetime.now(),
+                "total_articles": total_articles,
+                "total_pending": total_pending,
+                "processed": processed,
+                "successful": successful,
+                "failed": failed,
+                "progress_percentage": progress,
+                "elapsed_time": elapsed_time,
+                "batch_time": batch_time,
+                "errors": errors[-10:]  # Keep last 10 errors
+            }
+            
+            # Store progress in memory (or database if you prefer)
+            app.state.embedding_progress = progress_record
+            
+        return {
+            "status": "completed",
+            "total_articles": total_articles,
+            "total_processed": successful + failed,
+            "successful": successful,
+            "failed": failed,
+            "completion_time": elapsed_time,
+            "average_time_per_article": elapsed_time / (successful + failed) if (successful + failed) > 0 else 0,
+            "errors": errors[:10] if errors else []
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+@router.get("/embedding-progress")
+async def get_embedding_progress(db: Session = Depends(get_db)):
+    """Get current progress of embedding generation"""
+    try:
+        # Get current counts
+        total_articles = db.query(models.Article).count()
+        total_embeddings = db.query(models.ArticleEmbedding).count()
+        
+        # Get progress from state if available
+        progress = getattr(app.state, 'embedding_progress', None)
+        
+        if progress:
+            return {
+                "status": "in_progress",
+                "total_articles": total_articles,
+                "current_embeddings": total_embeddings,
+                "coverage_percentage": (total_embeddings / total_articles * 100) if total_articles > 0 else 0,
+                "detailed_progress": progress
+            }
+        else:
+            return {
+                "status": "idle",
+                "total_articles": total_articles,
+                "current_embeddings": total_embeddings,
+                "coverage_percentage": (total_embeddings / total_articles * 100) if total_articles > 0 else 0
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @router.get("/test-embedding/{article_id}")
 async def test_embedding_pipeline(
     article_id: int,
