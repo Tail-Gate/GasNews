@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Array, Float, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Float, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import ARRAY
 from .database import Base
 from datetime import datetime, UTC
 import numpy as np
@@ -42,7 +43,7 @@ class ArticleEmbedding(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     article_id = Column(Integer, ForeignKey("articles.id"), unique=True)
-    embedding_vector = Column(Array(Float))  # Store embedding as array of floats
+    embedding_vector = Column(ARRAY(Float))  # Store embedding as array of floats
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_updated = Column(DateTime, default=lambda: datetime.now(UTC))
     model_version = Column(String)  # Track which model version generated the embedding
