@@ -23,9 +23,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
-router = APIRouter(prefix="/recommendations", tags=["recommendations"])
-
 # Initialize news sources
 news_sources = [
     NewsAPISource(os.getenv("NEWS_API_KEY")),
@@ -36,20 +33,142 @@ news_sources = [
 ]
 
 # Initialize services
+embeddings_service = EmbeddingsService(api_key=os.getenv("OPENAI_API_KEY"))
+
 news_aggregator = NewsAggregator(news_sources)
 news_processor = NewsProcessor()
 news_notifier = NewsNotifier()
 
+#Creating FastAPI
+app = FastAPI()
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+
+
+# Database dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 # Initialize router
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
-# Initialize services
-embeddings_service = EmbeddingsService(api_key=os.getenv("OPENAI_API_KEY"))
+@router.get("/debug/similar/{article_id}")
+async def debug_similar_articles(
+    article_id: int,
+    threshold: float = 0.5,
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint for similarity search"""
+    try:
+        # Get source article
+        article = db.query(models.Article).filter(models.Article.id == article_id).first()
+        if not article:
+            return {"error": "Article not found"}
+
+        # Get article embedding
+        source_embedding = db.query(models.ArticleEmbedding).filter(
+            models.ArticleEmbedding.article_id == article_id
+        ).first()
+        
+        if not source_embedding:
+            return {
+                "error": "No embedding found for article",
+                "article_id": article_id
+            }
+
+        # Get all other articles with embeddings
+        embeddings = db.query(models.ArticleEmbedding, models.Article).join(
+            models.Article
+        ).filter(
+            models.Article.id != article_id
+        ).all()
+
+        # Calculate similarities
+        similarities = []
+        for embedding, target_article in embeddings:
+            similarity = embeddings_service.compute_similarity(
+                source_embedding.embedding_vector,
+                embedding.embedding_vector
+            )
+            similarities.append({
+                "article_id": target_article.id,
+                "title": target_article.title,
+                "similarity": similarity,
+                "source": target_article.source,
+                "published_date": target_article.published_date.isoformat()
+            })
+
+        # Sort by similarity
+        similarities.sort(key=lambda x: x["similarity"], reverse=True)
+
+        return {
+            "source_article": {
+                "id": article.id,
+                "title": article.title,
+                "has_embedding": True
+            },
+            "total_comparisons": len(similarities),
+            "threshold": threshold,
+            "similar_articles": similarities[:limit],
+            "similarity_range": {
+                "max": max(s["similarity"] for s in similarities) if similarities else 0,
+                "min": min(s["similarity"] for s in similarities) if similarities else 0,
+                "avg": sum(s["similarity"] for s in similarities) / len(similarities) if similarities else 0
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/debug/user/{user_id}")
+async def debug_user_setup(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint for user recommendation setup"""
+    try:
+        # Check user exists
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            return {"error": "User not found"}
+
+        # Get user's bookmarks
+        bookmarks = db.query(models.Bookmark).filter(
+            models.Bookmark.user_id == user_id
+        ).all()
+
+        # Get recommendation history
+        recommendations = db.query(models.RecommendationHistory).filter(
+            models.RecommendationHistory.user_id == user_id
+        ).all()
+
+        return {
+            "user_exists": True,
+            "bookmarks_count": len(bookmarks),
+            "recommendations_count": len(recommendations),
+            "recent_bookmarks": [
+                {
+                    "article_id": b.article_id,
+                    "created_at": b.created_at.isoformat()
+                } for b in bookmarks[-5:]  # Last 5 bookmarks
+            ] if bookmarks else [],
+            "recent_recommendations": [
+                {
+                    "article_id": r.recommended_article_id,
+                    "similarity_score": r.similarity_score,
+                    "created_at": r.created_at.isoformat()
+                } for r in recommendations[-5:]  # Last 5 recommendations
+            ] if recommendations else []
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.post("/generate-all-embeddings")
 async def generate_all_embeddings(
@@ -328,8 +447,65 @@ async def refresh_user_recommendations(
         raise HTTPException(status_code=500, detail="Failed to refresh recommendations")
     return {"status": "success"}
 
+@router.get("/user/{user_id}")
+async def get_user_recommendations(
+    user_id: int,
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Get personalized recommendations for a user"""
+    # Get recent recommendations
+    recommendations = db.query(models.RecommendationHistory).filter(
+        models.RecommendationHistory.user_id == user_id,
+        models.RecommendationHistory.created_at >= datetime.now() - timedelta(days=2)
+    ).order_by(
+        models.RecommendationHistory.created_at.desc()
+    ).limit(limit).all()
+    
+    if not recommendations:
+        return {"recommendations": [], "message": "No recent recommendations"}
+    
+    return {
+        "recommendations": [
+            {
+                "article_id": rec.recommended_article_id,
+                "title": rec.recommended_article.title,
+                "url": rec.recommended_article.url,
+                "similarity_score": rec.similarity_score,
+                "source": rec.recommended_article.source,
+                "published_date": rec.recommended_article.published_date
+            }
+            for rec in recommendations
+        ]
+    }
 
-# CORS middleware
+@router.get("/stats/{user_id}")
+async def get_recommendation_stats(
+    user_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Get statistics about recommendations and user interaction"""
+    since_date = datetime.now() - timedelta(days=days)
+    
+    # Get recommendation stats
+    stats = db.query(
+        func.count(models.RecommendationHistory.id).label('total_recommendations'),
+        func.sum(case((models.RecommendationHistory.was_clicked == True, 1), else_=0)).label('clicked'),
+        func.sum(case((models.RecommendationHistory.was_bookmarked == True, 1), else_=0)).label('bookmarked')
+    ).filter(
+        models.RecommendationHistory.user_id == user_id,
+        models.RecommendationHistory.created_at >= since_date
+    ).first()
+    
+    return {
+        "period_days": days,
+        "total_recommendations": stats.total_recommendations or 0,
+        "interaction_rate": (stats.clicked or 0) / stats.total_recommendations if stats.total_recommendations else 0,
+        "bookmark_rate": (stats.bookmarked or 0) / stats.total_recommendations if stats.total_recommendations else 0,
+    }
+
+# CORS middleware and router
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -338,15 +514,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
-# Database dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-# Your existing root endpoints
+
+# App endpoints
 @app.get("/")
 async def root():
     return {"message": "Natural Gas Source news"}
@@ -492,231 +662,4 @@ async def fetch_news(db: Session = Depends(get_db)):
 def get_sources_status():
     return news_aggregator.get_source_status()
 
-@router.get("/user/{user_id}")
-async def get_user_recommendations(
-    user_id: int,
-    limit: int = 10,
-    db: Session = Depends(get_db)
-):
-    """Get personalized recommendations for a user"""
-    # Get recent recommendations
-    recommendations = db.query(models.RecommendationHistory).filter(
-        models.RecommendationHistory.user_id == user_id,
-        models.RecommendationHistory.created_at >= datetime.now() - timedelta(days=2)
-    ).order_by(
-        models.RecommendationHistory.created_at.desc()
-    ).limit(limit).all()
-    
-    if not recommendations:
-        return {"recommendations": [], "message": "No recent recommendations"}
-    
-    return {
-        "recommendations": [
-            {
-                "article_id": rec.recommended_article_id,
-                "title": rec.recommended_article.title,
-                "url": rec.recommended_article.url,
-                "similarity_score": rec.similarity_score,
-                "source": rec.recommended_article.source,
-                "published_date": rec.recommended_article.published_date
-            }
-            for rec in recommendations
-        ]
-    }
 
-@router.post("/{article_id}/feedback")
-async def submit_feedback(
-    article_id: int,
-    feedback: schemas.RecommendationFeedback,
-    db: Session = Depends(get_db)
-):
-    """Submit feedback (thumbs up/down) for a recommended article"""
-    # Find the most recent recommendation for this article and user
-    recommendation = db.query(models.RecommendationHistory).filter(
-        models.RecommendationHistory.recommended_article_id == article_id,
-        models.RecommendationHistory.user_id == feedback.user_id
-    ).order_by(
-        models.RecommendationHistory.created_at.desc()
-    ).first()
-    
-    if not recommendation:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
-    
-    # Update feedback
-    recommendation.was_clicked = True
-    if feedback.feedback_type == "thumbs_up":
-        recommendation.was_bookmarked = True
-    
-    # Store feedback timestamp
-    recommendation.feedback_timestamp = datetime.now()
-    
-    db.commit()
-    
-    return {"status": "success"}
-
-@router.get("/{article_id}/similar")
-async def get_similar_articles(
-    article_id: int,
-    limit: int = 5,
-    db: Session = Depends(get_db)
-):
-    """Get similar articles (placeholder until embeddings are implemented)"""
-    # For now, return articles from the same source with similar dates
-    article = db.query(models.Article).filter(models.Article.id == article_id).first()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    
-    similar_articles = db.query(models.Article).filter(
-        models.Article.source == article.source,
-        models.Article.id != article_id,
-        models.Article.published_date >= article.published_date - timedelta(days=7),
-        models.Article.published_date <= article.published_date + timedelta(days=7)
-    ).limit(limit).all()
-    
-    return [
-        {
-            "article_id": art.id,
-            "title": art.title,
-            "url": art.url,
-            "source": art.source,
-            "published_date": art.published_date
-        }
-        for art in similar_articles
-    ]
-
-@router.get("/stats/{user_id}")
-async def get_recommendation_stats(
-    user_id: int,
-    days: int = 30,
-    db: Session = Depends(get_db)
-):
-    """Get statistics about recommendations and user interaction"""
-    since_date = datetime.now() - timedelta(days=days)
-    
-    # Get recommendation stats
-    stats = db.query(
-        func.count(models.RecommendationHistory.id).label('total_recommendations'),
-        func.sum(case((models.RecommendationHistory.was_clicked == True, 1), else_=0)).label('clicked'),
-        func.sum(case((models.RecommendationHistory.was_bookmarked == True, 1), else_=0)).label('bookmarked')
-    ).filter(
-        models.RecommendationHistory.user_id == user_id,
-        models.RecommendationHistory.created_at >= since_date
-    ).first()
-    
-    return {
-        "period_days": days,
-        "total_recommendations": stats.total_recommendations or 0,
-        "interaction_rate": (stats.clicked or 0) / stats.total_recommendations if stats.total_recommendations else 0,
-        "bookmark_rate": (stats.bookmarked or 0) / stats.total_recommendations if stats.total_recommendations else 0,
-    }
-
-@router.get("/debug/similar/{article_id}")
-async def debug_similar_articles(
-    article_id: int,
-    threshold: float = 0.5,
-    limit: int = 5,
-    db: Session = Depends(get_db)
-):
-    """Debug endpoint for similarity search"""
-    try:
-        # Get source article
-        article = db.query(models.Article).filter(models.Article.id == article_id).first()
-        if not article:
-            return {"error": "Article not found"}
-
-        # Get article embedding
-        source_embedding = db.query(models.ArticleEmbedding).filter(
-            models.ArticleEmbedding.article_id == article_id
-        ).first()
-        
-        if not source_embedding:
-            return {
-                "error": "No embedding found for article",
-                "article_id": article_id
-            }
-
-        # Get all other articles with embeddings
-        embeddings = db.query(models.ArticleEmbedding, models.Article).join(
-            models.Article
-        ).filter(
-            models.Article.id != article_id
-        ).all()
-
-        # Calculate similarities
-        similarities = []
-        for embedding, target_article in embeddings:
-            similarity = embeddings_service.compute_similarity(
-                source_embedding.embedding_vector,
-                embedding.embedding_vector
-            )
-            similarities.append({
-                "article_id": target_article.id,
-                "title": target_article.title,
-                "similarity": similarity,
-                "source": target_article.source,
-                "published_date": target_article.published_date.isoformat()
-            })
-
-        # Sort by similarity
-        similarities.sort(key=lambda x: x["similarity"], reverse=True)
-
-        return {
-            "source_article": {
-                "id": article.id,
-                "title": article.title,
-                "has_embedding": True
-            },
-            "total_comparisons": len(similarities),
-            "threshold": threshold,
-            "similar_articles": similarities[:limit],
-            "similarity_range": {
-                "max": max(s["similarity"] for s in similarities) if similarities else 0,
-                "min": min(s["similarity"] for s in similarities) if similarities else 0,
-                "avg": sum(s["similarity"] for s in similarities) / len(similarities) if similarities else 0
-            }
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-@router.get("/debug/user/{user_id}")
-async def debug_user_setup(
-    user_id: int,
-    db: Session = Depends(get_db)
-):
-    """Debug endpoint for user recommendation setup"""
-    try:
-        # Check user exists
-        user = db.query(models.User).filter(models.User.id == user_id).first()
-        if not user:
-            return {"error": "User not found"}
-
-        # Get user's bookmarks
-        bookmarks = db.query(models.Bookmark).filter(
-            models.Bookmark.user_id == user_id
-        ).all()
-
-        # Get recommendation history
-        recommendations = db.query(models.RecommendationHistory).filter(
-            models.RecommendationHistory.user_id == user_id
-        ).all()
-
-        return {
-            "user_exists": True,
-            "bookmarks_count": len(bookmarks),
-            "recommendations_count": len(recommendations),
-            "recent_bookmarks": [
-                {
-                    "article_id": b.article_id,
-                    "created_at": b.created_at.isoformat()
-                } for b in bookmarks[-5:]  # Last 5 bookmarks
-            ] if bookmarks else [],
-            "recent_recommendations": [
-                {
-                    "article_id": r.recommended_article_id,
-                    "similarity_score": r.similarity_score,
-                    "created_at": r.created_at.isoformat()
-                } for r in recommendations[-5:]  # Last 5 recommendations
-            ] if recommendations else []
-        }
-    except Exception as e:
-        return {"error": str(e)}
