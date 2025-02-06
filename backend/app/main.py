@@ -13,6 +13,8 @@ import logging
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from sqlalchemy import func, case  
+from passlib.context import CryptContext
+
 
 # Load environment variables
 load_dotenv()
@@ -55,6 +57,8 @@ def get_db():
     finally:
         db.close()
 
+# Creates password context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Initialize router
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
@@ -594,7 +598,21 @@ def read_article(article_id: int, db: Session = Depends(get_db)):
 # User endpoints
 @app.post("/users/", response_model=schemas.UserResponse)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = crud.create_user(db, username=user.username, hashed_password=user.password, email=user.email)
+    # Check if user already exists
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Hash the password
+    hashed_password = pwd_context.hash(user.password)
+    
+    # Create user with hashed password
+    db_user = crud.create_user(
+        db=db, 
+        username=user.username, 
+        email=user.email, 
+        hashed_password=hashed_password
+    )
     return db_user
 
 @app.get("/users/{user_id}", response_model=schemas.UserResponse)
