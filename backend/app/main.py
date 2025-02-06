@@ -615,9 +615,10 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     )
     return db_user
 
-@app.get("/users/{user_id}", response_model=schemas.UserResponse)
+@app.get("/users/{user_id}")
 def read_user(user_id: int, db: Session = Depends(get_db)):
     user = crud.get_user(db, user_id=user_id)
+    print(f"User fetched: {user}")
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
