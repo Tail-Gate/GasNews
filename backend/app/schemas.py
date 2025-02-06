@@ -9,7 +9,6 @@ class UserBase(BaseModel):
     email: EmailStr
 
 class UserCreate(UserBase):
-    email: str = Field(min_length=6)
     password: str = Field(min_length=8)
 
 class User(UserBase):
