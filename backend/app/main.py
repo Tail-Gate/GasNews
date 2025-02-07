@@ -509,6 +509,53 @@ async def get_recommendation_stats(
         "bookmark_rate": (stats.bookmarked or 0) / stats.total_recommendations if stats.total_recommendations else 0,
     }
 
+@router.post("/generate-initial-recommendations/{user_id}")
+async def generate_initial_recommendations(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Generate initial set of recommendations for a user"""
+    try:
+        # Get recent articles
+        recent_articles = db.query(models.Article)\
+            .order_by(models.Article.published_date.desc())\
+            .limit(10)\
+            .all()
+
+        recommendations = []
+        for article in recent_articles:
+            # Get similar articles
+            similar_articles = await embeddings_service.get_similar_articles(
+                db, article, limit=3  # Get top 3 similar articles for each recent article
+            )
+            
+            # Store recommendations
+            for similar_article, similarity_score in similar_articles:
+                recommendation = models.RecommendationHistory(
+                    source_article_id=article.id,
+                    recommended_article_id=similar_article.id,
+                    user_id=user_id,
+                    similarity_score=similarity_score,
+                    recommendation_type="topic",
+                    features_used={"embedding_similarity": similarity_score}
+                )
+                recommendations.append(recommendation)
+        
+        # Batch insert recommendations
+        db.bulk_save_objects(recommendations)
+        db.commit()
+        
+        return {
+            "status": "success",
+            "recommendations_generated": len(recommendations)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate recommendations: {str(e)}"
+        )
+    
 # CORS middleware and router
 app.add_middleware(
     CORSMiddleware,
