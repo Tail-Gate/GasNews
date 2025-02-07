@@ -522,39 +522,53 @@ async def generate_initial_recommendations(
             .limit(10)\
             .all()
 
+        # Debug info
+        process_info = {
+            "recent_articles_count": len(recent_articles),
+            "similar_articles_found": 0,
+            "recommendations_created": 0
+        }
+
         recommendations = []
         for article in recent_articles:
             # Get similar articles
             similar_articles = await embeddings_service.get_similar_articles(
-                db, article, limit=3  # Get top 3 similar articles for each recent article
+                db, article, limit=3
             )
+            
+            process_info["similar_articles_found"] += len(similar_articles)
             
             # Store recommendations
             for similar_article, similarity_score in similar_articles:
-                recommendation = models.RecommendationHistory(
-                    source_article_id=article.id,
-                    recommended_article_id=similar_article.id,
-                    user_id=user_id,
-                    similarity_score=similarity_score,
-                    recommendation_type="topic",
-                    features_used={"embedding_similarity": similarity_score}
-                )
-                recommendations.append(recommendation)
+                if similarity_score > 0.4:  # Add minimum similarity threshold
+                    recommendation = models.RecommendationHistory(
+                        source_article_id=article.id,
+                        recommended_article_id=similar_article.id,
+                        user_id=user_id,
+                        similarity_score=similarity_score,
+                        recommendation_type="topic",
+                        features_used={"embedding_similarity": similarity_score}
+                    )
+                    recommendations.append(recommendation)
+                    process_info["recommendations_created"] += 1
         
         # Batch insert recommendations
-        db.bulk_save_objects(recommendations)
-        db.commit()
+        if recommendations:
+            db.bulk_save_objects(recommendations)
+            db.commit()
         
         return {
             "status": "success",
+            "process_info": process_info,
             "recommendations_generated": len(recommendations)
         }
         
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate recommendations: {str(e)}"
-        )
+        return {
+            "status": "error",
+            "error": str(e),
+            "process_info": process_info if 'process_info' in locals() else None
+        }
     
 # CORS middleware and router
 app.add_middleware(
