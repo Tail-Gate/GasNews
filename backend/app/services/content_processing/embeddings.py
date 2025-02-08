@@ -125,12 +125,13 @@ class EmbeddingsService:
         article: models.Article,
         limit: int = 10,
         min_age_days: int = 0,
-        max_age_days: int = 45  # 1.5 months
+        max_age_days: int = 45,  # 1.5 months
+        min_similarity: float = 0.1 
     ) -> List[Tuple[models.Article, float]]:
         """Get similar articles based on embedding similarity"""
         try:
             # Get or create embedding for source article
-            source_embedding = await self.create_embedding(db, article)
+            source_embedding = await self.create_embedding(db, article, min_similarity=0.1)
             if not source_embedding:
                 return []
 

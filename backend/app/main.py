@@ -174,6 +174,60 @@ async def debug_user_setup(
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/debug/recommendations")
+async def debug_recommendations(db: Session = Depends(get_db)):
+    """Debug endpoint to check recommendation storage"""
+    try:
+        # Get counts
+        total_recommendations = db.query(models.RecommendationHistory).count()
+        
+        # Get recent recommendations if any exist
+        recent_recommendations = db.query(models.RecommendationHistory)\
+            .order_by(models.RecommendationHistory.created_at.desc())\
+            .limit(5)\
+            .all()
+            
+        recent_details = []
+        if recent_recommendations:
+            for rec in recent_recommendations:
+                try:
+                    source_article = db.query(models.Article).filter(models.Article.id == rec.source_article_id).first()
+                    recommended_article = db.query(models.Article).filter(models.Article.id == rec.recommended_article_id).first()
+                    
+                    recent_details.append({
+                        "id": rec.id,
+                        "user_id": rec.user_id,
+                        "source_article": {
+                            "id": source_article.id,
+                            "title": source_article.title if source_article else None
+                        },
+                        "recommended_article": {
+                            "id": recommended_article.id,
+                            "title": recommended_article.title if recommended_article else None
+                        },
+                        "similarity_score": rec.similarity_score,
+                        "created_at": rec.created_at.isoformat()
+                    })
+                except Exception as e:
+                    recent_details.append({
+                        "id": rec.id,
+                        "error": str(e)
+                    })
+        
+        return {
+            "total_recommendations": total_recommendations,
+            "recent_recommendations": recent_details,
+            "table_info": {
+                "has_recommendations": total_recommendations > 0,
+                "recent_count": len(recent_details)
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": f"Database inspection failed: {str(e)}"
+        }
+
 @router.post("/generate-all-embeddings")
 async def generate_all_embeddings(
     batch_size: int = 10,
