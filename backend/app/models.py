@@ -61,15 +61,19 @@ class RecommendationHistory(Base):
     similarity_score = Column(Float)
     recommendation_type = Column(String)  # 'topic' or 'style'
     features_used = Column(JSON)  # Store which features led to this recommendation
-    was_clicked = Column(Boolean, default=False)
-    was_bookmarked = Column(Boolean, default=False)
+    
+    # Interaction tracking
+    was_clicked = Column(Boolean, default=False)  # User clicked to read
+    feedback_type = Column(String, nullable=True)  # 'thumbs_up' or 'thumbs_down'
+    feedback_timestamp = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     
     # Relationships
     source_article = relationship("Article", foreign_keys=[source_article_id])
     recommended_article = relationship("Article", foreign_keys=[recommended_article_id])
     user = relationship("User")
-
+    
 class RecommendationBatch(Base):
     __tablename__ = "recommendation_batches"
     
