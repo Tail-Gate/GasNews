@@ -54,7 +54,6 @@ class NewsResponse(BaseModel):
     fetch_time: datetime = Field(default_factory=datetime.utcnow)
 
 # Bookmark Schemas
-# Add this new schema for bookmark requests
 class BookmarkRequest(BaseModel):
     user_id: int
 
@@ -89,7 +88,7 @@ class FeedbackType(str, Enum):
 class RecommendationFeedback(BaseModel):
     user_id: int
     feedback_type: FeedbackType
-    
+        
 class RecommendationResponse(BaseModel):
     article_id: int
     title: str

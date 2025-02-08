@@ -473,28 +473,37 @@ async def get_similar_articles(
         for art, score in similar_articles
     ]
 
-@router.post("/{article_id}/feedback")
+@router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
     feedback: schemas.RecommendationFeedback,
     db: Session = Depends(get_db)
 ):
-    """Submit feedback for a recommendation"""
-    # Update recommendation history with feedback
+    """Submit feedback (thumbs up/down) for a recommended article"""
+    # Find the most recent recommendation for this article and user
     recommendation = db.query(models.RecommendationHistory).filter(
         models.RecommendationHistory.recommended_article_id == article_id,
         models.RecommendationHistory.user_id == feedback.user_id
+    ).order_by(
+        models.RecommendationHistory.created_at.desc()
     ).first()
     
-    if recommendation:
-        if feedback.feedback_type == "thumbs_up":
-            recommendation.was_clicked = True
-            recommendation.was_bookmarked = True
-        db.commit()
+    if not recommendation:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
     
-    return {"status": "success"}
+    # Update feedback
+    recommendation.feedback_type = feedback.feedback_type
+    recommendation.feedback_timestamp = datetime.now(datetime.UTC)
+    
+    db.commit()
+    
+    return {
+        "status": "success",
+        "article_id": article_id,
+        "feedback_type": feedback.feedback_type,
+        "timestamp": recommendation.feedback_timestamp
+    }@router.get("/debug/feedback")
 
-@router.get("/debug/feedback")
 async def check_feedback_status(db: Session = Depends(get_db)):
 
     """Check current state of feedback data"""
