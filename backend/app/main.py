@@ -496,16 +496,13 @@ async def submit_feedback(
 
 @router.get("/debug/feedback")
 async def check_feedback_status(db: Session = Depends(get_db)):
+
     """Check current state of feedback data"""
     try:
         # Get total recommendations
         total_recommendations = db.query(models.RecommendationHistory).count()
         
-        # Check for any feedback or bookmarks
-        recommendations_with_feedback = db.query(models.RecommendationHistory).filter(
-            models.RecommendationHistory.feedback_type.isnot(None)
-        ).count()
-        
+        # Check for clicked recommendations
         clicked_recommendations = db.query(models.RecommendationHistory).filter(
             models.RecommendationHistory.was_clicked == True
         ).count()
@@ -515,29 +512,38 @@ async def check_feedback_status(db: Session = Depends(get_db)):
             models.RecommendationHistory.created_at.desc()
         ).limit(5).all()
         
+        # Get total bookmarks (from separate table)
+        total_bookmarks = db.query(models.Bookmark).count()
+        
         return {
-            "total_recommendations": total_recommendations,
-            "recommendations_with_feedback": recommendations_with_feedback,
-            "clicked_recommendations": clicked_recommendations,
-            "sample_data": [
+            "counts": {
+                "total_recommendations": total_recommendations,
+                "clicked_recommendations": clicked_recommendations,
+                "total_bookmarks": total_bookmarks
+            },
+            "recent_recommendations": [
                 {
                     "id": rec.id,
                     "user_id": rec.user_id,
                     "created_at": rec.created_at,
                     "was_clicked": rec.was_clicked,
-                    "feedback_type": getattr(rec, 'feedback_type', None),  # Safe access in case column doesn't exist
-                    "similarity_score": rec.similarity_score
+                    "similarity_score": rec.similarity_score,
+                    "recommendation_type": rec.recommendation_type
                 }
                 for rec in recent_recs
-            ]
+            ],
+            "schema_status": {
+                "has_feedback_column": False,  # We know this from the error
+                "has_clicked_tracking": True,
+                "has_bookmarks_table": True
+            }
         }
     except Exception as e:
         return {
             "error": f"Error checking feedback: {str(e)}",
             "error_type": str(type(e).__name__)
-        }
+        }@router.get("/refresh/{user_id}")
 
-@router.get("/refresh/{user_id}")
 async def refresh_user_recommendations(
     user_id: int,
     db: Session = Depends(get_db)
