@@ -130,7 +130,6 @@ async def debug_similar_articles(
         }
     except Exception as e:
         return {"error": str(e)}
-
 @router.get("/debug/user/{user_id}")
 async def debug_user_setup(
     user_id: int,
