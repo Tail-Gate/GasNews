@@ -473,6 +473,7 @@ async def get_similar_articles(
         for art, score in similar_articles
     ]
 
+Can you change this function:
 @router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
@@ -480,7 +481,6 @@ async def submit_feedback(
     db: Session = Depends(get_db)
 ):
     """Submit feedback (thumbs up/down) for a recommended article"""
-    # Find the most recent recommendation for this article and user
     recommendation = db.query(models.RecommendationHistory).filter(
         models.RecommendationHistory.recommended_article_id == article_id,
         models.RecommendationHistory.user_id == feedback.user_id
@@ -491,7 +491,6 @@ async def submit_feedback(
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     
-    # Update feedback
     recommendation.feedback_type = feedback.feedback_type
     recommendation.feedback_timestamp = datetime.now(datetime.UTC)
     
