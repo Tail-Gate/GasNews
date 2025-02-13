@@ -473,7 +473,6 @@ async def get_similar_articles(
         for art, score in similar_articles
     ]
 
-Can you change this function:
 @router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
