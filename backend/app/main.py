@@ -635,7 +635,7 @@ async def generate_recommendations(
                 db=db,
                 article=article,
                 limit=3,
-                min_similarity=0.4
+                min_similarity=0.4  # Set a reasonable threshold based on our debug findings
             )
 
             for similar_article, similarity_score in similar_articles:
@@ -674,7 +674,6 @@ async def generate_recommendations(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
 async def check_feedback_status(db: Session = Depends(get_db)):
 
     """Check current state of feedback data"""
