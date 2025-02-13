@@ -502,6 +502,114 @@ async def submit_feedback(
         "timestamp": recommendation.feedback_timestamp
     }@router.get("/debug/feedback")
 
+# Debugs the whole Recommendations pipeline
+@router.get("/debug/pipeline/{user_id}")
+async def debug_recommendation_pipeline(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to inspect the entire recommendation pipeline"""
+    debug_info = {
+        "timestamp": datetime.now().isoformat(),
+        "user_id": user_id,
+        "steps": []
+    }
+    
+    try:
+        # Step 1: Check user exists
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        debug_info["steps"].append({
+            "step": "check_user",
+            "status": "success" if user else "failed",
+            "details": {
+                "user_found": bool(user),
+                "user_id": user_id
+            }
+        })
+        
+        if not user:
+            return debug_info
+            
+        # Step 2: Check recent articles
+        recent_articles = db.query(models.Article)\
+            .order_by(models.Article.published_date.desc())\
+            .limit(10)\
+            .all()
+            
+        debug_info["steps"].append({
+            "step": "check_articles",
+            "status": "success" if recent_articles else "failed",
+            "details": {
+                "articles_found": len(recent_articles),
+                "newest_article_date": recent_articles[0].published_date.isoformat() if recent_articles else None,
+                "oldest_article_date": recent_articles[-1].published_date.isoformat() if recent_articles else None
+            }
+        })
+        
+        # Step 3: Check embeddings
+        if recent_articles:
+            embeddings = db.query(models.ArticleEmbedding)\
+                .filter(models.ArticleEmbedding.article_id.in_([a.id for a in recent_articles]))\
+                .all()
+                
+            debug_info["steps"].append({
+                "step": "check_embeddings",
+                "status": "success" if embeddings else "warning",
+                "details": {
+                    "total_embeddings": len(embeddings),
+                    "articles_with_embeddings": len(set(e.article_id for e in embeddings)),
+                    "embedding_coverage": f"{len(embeddings)}/{len(recent_articles)}"
+                }
+            })
+            
+            # Step 4: Test similarity calculation for first article if it has embedding
+            if embeddings:
+                try:
+                    first_article = recent_articles[0]
+                    similar_articles = await embeddings_service.get_similar_articles(
+                        db, first_article, limit=3
+                    )
+                    
+                    debug_info["steps"].append({
+                        "step": "test_similarity",
+                        "status": "success" if similar_articles else "warning",
+                        "details": {
+                            "similar_articles_found": len(similar_articles),
+                            "similarity_scores": [
+                                {"article_id": art.id, "score": score}
+                                for art, score in similar_articles
+                            ] if similar_articles else []
+                        }
+                    })
+                except Exception as e:
+                    debug_info["steps"].append({
+                        "step": "test_similarity",
+                        "status": "error",
+                        "details": {"error": str(e)}
+                    })
+        
+        # Step 5: Check existing recommendations
+        existing_recs = db.query(models.RecommendationHistory)\
+            .filter(models.RecommendationHistory.user_id == user_id)\
+            .order_by(models.RecommendationHistory.created_at.desc())\
+            .limit(5)\
+            .all()
+            
+        debug_info["steps"].append({
+            "step": "check_recommendations",
+            "status": "info",
+            "details": {
+                "existing_recommendations": len(existing_recs),
+                "latest_recommendation": existing_recs[0].created_at.isoformat() if existing_recs else None
+            }
+        })
+        
+        return debug_info
+        
+    except Exception as e:
+        debug_info["error"] = str(e)
+        return debug_info
+
 @app.post("/recommendations/generate/{user_id}")
 async def generate_recommendations(
     user_id: int,
