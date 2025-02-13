@@ -502,6 +502,72 @@ async def submit_feedback(
         "timestamp": recommendation.feedback_timestamp
     }@router.get("/debug/feedback")
 
+@app.post("/recommendations/generate/{user_id}")
+async def generate_recommendations(
+    user_id: int,
+    db: Session = Depends(get_db),
+    limit: int = 10
+):
+    """Generate basic recommendations for a user"""
+    try:
+        # Get recent articles to use as sources
+        recent_articles = db.query(models.Article)\
+            .order_by(models.Article.published_date.desc())\
+            .limit(10)\
+            .all()
+
+        if not recent_articles:
+            raise HTTPException(status_code=404, detail="No articles found to generate recommendations")
+
+        recommendations = []
+        seen_articles = set()  # Avoid duplicates
+
+        # For each recent article, find similar ones
+        for article in recent_articles:
+            similar_articles = await embeddings_service.get_similar_articles(
+                db=db,
+                article=article,
+                limit=3,
+                min_similarity=0.4
+            )
+
+            for similar_article, similarity_score in similar_articles:
+                # Skip if we've seen this article
+                if similar_article.id in seen_articles:
+                    continue
+
+                recommendation = models.RecommendationHistory(
+                    source_article_id=article.id,
+                    recommended_article_id=similar_article.id,
+                    user_id=user_id,
+                    similarity_score=similarity_score,
+                    recommendation_type="similar",
+                    features_used={"embedding_similarity": similarity_score},
+                    created_at=datetime.now(datetime.UTC)
+                )
+                recommendations.append(recommendation)
+                seen_articles.add(similar_article.id)
+
+                if len(recommendations) >= limit:
+                    break
+
+            if len(recommendations) >= limit:
+                break
+
+        # Store the recommendations
+        if recommendations:
+            db.bulk_save_objects(recommendations)
+            db.commit()
+
+        return {
+            "status": "success",
+            "recommendations_created": len(recommendations)
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
 async def check_feedback_status(db: Session = Depends(get_db)):
 
     """Check current state of feedback data"""
