@@ -29,9 +29,11 @@ class EmbeddingsService:
             text = re.sub(r'[^\w\s.,!?-]', ' ', text)
             text = ' '.join(text.split())
             return text
+        
         except Exception as e:
             self.logger.error(f"Error cleaning text: {str(e)}")
             return text
+
 
     def _prepare_article_text(self, article: models.Article) -> str:
         """Prepare article text for embedding"""
