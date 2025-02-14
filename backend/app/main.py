@@ -130,6 +130,7 @@ async def debug_similar_articles(
         }
     except Exception as e:
         return {"error": str(e)}
+
 @router.get("/debug/user/{user_id}")
 async def debug_user_setup(
     user_id: int,
@@ -451,27 +452,58 @@ async def get_embedding_stats(db: Session = Depends(get_db)):
 async def get_similar_articles(
     article_id: int,
     limit: int = 5,
+    min_similarity: float = 0.4,
     db: Session = Depends(get_db)
 ):
     """Get similar articles based on embeddings"""
-    article = db.query(models.Article).filter(models.Article.id == article_id).first()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    
-    similar_articles = await embeddings_service.get_similar_articles(
-        db, article, limit=limit
-    )
-    
-    return [
-        {
-            "article_id": art.id,
-            "title": art.title,
-            "similarity_score": score,
-            "url": art.url
-        }
-        for art, score in similar_articles
-    ]
+    try:
+        # Get source article
+        article = db.query(models.Article).filter(models.Article.id == article_id).first()
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
 
+        # Get article embedding
+        source_embedding = db.query(models.ArticleEmbedding).filter(
+            models.ArticleEmbedding.article_id == article_id
+        ).first()
+        
+        if not source_embedding:
+            raise HTTPException(status_code=404, detail="No embedding found for article")
+
+        # Get all other articles with embeddings
+        embeddings = db.query(models.ArticleEmbedding, models.Article).join(
+            models.Article
+        ).filter(
+            models.Article.id != article_id
+        ).all()
+
+        # Calculate similarities
+        similarities = []
+        for embedding, target_article in embeddings:
+            similarity = embeddings_service.compute_similarity(
+                source_embedding.embedding_vector,
+                embedding.embedding_vector
+            )
+            if similarity >= min_similarity:
+                similarities.append((target_article, similarity))
+
+        # Sort by similarity
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return top N similar articles
+        return [
+            {
+                "article_id": art.id,
+                "title": art.title,
+                "similarity_score": score,
+                "url": art.url
+            }
+            for art, score in similarities[:limit]
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
@@ -850,8 +882,9 @@ async def generate_initial_recommendations(
             "status": "error",
             "error": str(e),
             "process_info": process_info if 'process_info' in locals() else None
-        }
+        }    
     
+
 # CORS middleware and router
 app.add_middleware(
     CORSMiddleware,
