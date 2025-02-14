@@ -845,27 +845,49 @@ async def generate_initial_recommendations(
 
         recommendations = []
         for article in recent_articles:
-            # Get similar articles
-            similar_articles = await embeddings_service.get_similar_articles(
-                db, article, limit=3
-            )
+            # Get article embedding
+            source_embedding = db.query(models.ArticleEmbedding).filter(
+                models.ArticleEmbedding.article_id == article.id
+            ).first()
             
-            process_info["similar_articles_found"] += len(similar_articles)
-            
-            # Store recommendations
-            for similar_article, similarity_score in similar_articles:
-                if similarity_score > 0.4:  # Add minimum similarity threshold
-                    recommendation = models.RecommendationHistory(
-                        source_article_id=article.id,
-                        recommended_article_id=similar_article.id,
-                        user_id=user_id,
-                        similarity_score=similarity_score,
-                        recommendation_type="topic",
-                        features_used={"embedding_similarity": similarity_score}
-                    )
-                    recommendations.append(recommendation)
-                    process_info["recommendations_created"] += 1
-        
+            if not source_embedding:
+                continue
+
+            # Get all other articles with embeddings
+            embeddings = db.query(models.ArticleEmbedding, models.Article).join(
+                models.Article
+            ).filter(
+                models.Article.id != article.id
+            ).all()
+
+            # Calculate similarities
+            similarities = []
+            for embedding, target_article in embeddings:
+                similarity = embeddings_service.compute_similarity(
+                    source_embedding.embedding_vector,
+                    embedding.embedding_vector
+                )
+                if similarity >= 0.4:  # Only keep high-quality matches
+                    similarities.append((target_article, similarity))
+                    process_info["similar_articles_found"] += 1
+
+            # Sort by similarity and take top 3
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            top_similar = similarities[:3]
+
+            # Create recommendations
+            for similar_article, similarity_score in top_similar:
+                recommendation = models.RecommendationHistory(
+                    source_article_id=article.id,
+                    recommended_article_id=similar_article.id,
+                    user_id=user_id,
+                    similarity_score=similarity_score,
+                    recommendation_type="topic",
+                    features_used={"embedding_similarity": similarity_score}
+                )
+                recommendations.append(recommendation)
+                process_info["recommendations_created"] += 1
+
         # Batch insert recommendations
         if recommendations:
             db.bulk_save_objects(recommendations)
@@ -882,8 +904,7 @@ async def generate_initial_recommendations(
             "status": "error",
             "error": str(e),
             "process_info": process_info if 'process_info' in locals() else None
-        }    
-    
+        }
 
 # CORS middleware and router
 app.add_middleware(
