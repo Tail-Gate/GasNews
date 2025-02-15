@@ -503,7 +503,8 @@ async def get_similar_articles(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
@@ -531,7 +532,7 @@ async def submit_feedback(
         "article_id": article_id,
         "feedback_type": feedback.feedback_type,
         "timestamp": recommendation.feedback_timestamp
-    }@router.get("/debug/feedback")
+    }
 
 # Debugs the whole Recommendations pipeline
 @router.get("/debug/pipeline/{user_id}")

@@ -88,7 +88,7 @@ class FeedbackType(str, Enum):
 class RecommendationFeedback(BaseModel):
     user_id: int
     feedback_type: FeedbackType
-        
+    
 class RecommendationResponse(BaseModel):
     article_id: int
     title: str
