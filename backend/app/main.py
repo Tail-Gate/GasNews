@@ -504,6 +504,27 @@ async def get_similar_articles(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/recommendations/{article_id}/feedback")
+async def submit_feedback(
+    article_id: int,
+    feedback: schemas.RecommendationFeedback,
+    db: Session = Depends(get_db)
+):
+    recommendation = db.query(models.RecommendationHistory).filter(
+        models.RecommendationHistory.recommended_article_id == article_id,
+        models.RecommendationHistory.user_id == feedback.user_id
+    ).first()
+    
+    if not recommendation:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    
+    recommendation.feedback_type = feedback.feedback_type
+    recommendation.feedback_timestamp = datetime.now(datetime.UTC)
+    db.commit()
+    
+    return {"status": "success"}
+'''
 @router.post("/recommendations/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
@@ -559,6 +580,8 @@ async def submit_feedback(
         print(f"Unexpected error in feedback endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
     
+'''
+
 # Debugs the whole Recommendations pipeline
 @router.get("/debug/pipeline/{user_id}")
 async def debug_recommendation_pipeline(
