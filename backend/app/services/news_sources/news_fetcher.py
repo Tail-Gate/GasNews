@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import asyncio
 from typing import List, Dict
 from newsapi import NewsApiClient

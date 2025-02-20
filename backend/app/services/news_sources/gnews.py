@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 import aiohttp
 import asyncio
@@ -96,7 +96,7 @@ class GNewsSource(BaseNewsSource):
             'content': article.get('description', 'No content available'),
             'url': article.get('url', ''),
             'source': article.get('source', {}).get('name', 'Unknown source'),
-            'published_date': article.get('publishedAt', datetime.utcnow().isoformat()),
+            'published_date': article.get('publishedAt', datetime.now(timezone.utc).isoformat()),
             'image_url': article.get('image', None)
         }
 

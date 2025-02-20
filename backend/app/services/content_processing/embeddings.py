@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional, Tuple
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import logging
 from sqlalchemy.orm import Session
 from app import models
@@ -138,7 +138,7 @@ class EmbeddingsService:
                 return []
 
             # Calculate date range
-            now = datetime.now(datetime.UTC)
+            now = datetime.now(timezone.utc)
             min_date = now - timedelta(days=max_age_days)
             max_date = now - timedelta(days=min_age_days)
 
@@ -181,7 +181,7 @@ class EmbeddingsService:
             batch = models.RecommendationBatch(
                 user_id=user_id,
                 status="processing",
-                next_run_at=datetime.now(datetime.UTC) + timedelta(hours=12)
+                next_run_at=datetime.now(timezone.utc) + timedelta(hours=12)
             )
             db.add(batch)
             db.commit()
@@ -213,7 +213,7 @@ class EmbeddingsService:
                             recommendation_type="topic",
                             features_used=json.dumps({
                                 "embedding_similarity": similarity,
-                                "article_age_days": (datetime.now(datetime.UTC) - similar_article.published_date).days
+                                "article_age_days": (datetime.now(timezone.utc) - similar_article.published_date).days
                             })
                         )
                         all_recommendations.append(recommendation)

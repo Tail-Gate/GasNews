@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone,timezone
 import json
 
 from services.news_sources import (
@@ -52,10 +52,10 @@ async def main():
     # First print all API keys (masked) to verify they're loaded
     api_keys = {
         "NEWS_API_KEY": os.getenv("NEWS_API_KEY"),
-        "NEWSCATCHER_API_KEY": os.getenv("NEWSCATCHER_API_KEY"),
-        "CURRENTS_API_KEY": os.getenv("CURRENTS_API_KEY"),
-        "GNEWS_API_KEY": os.getenv("GNEWS_API_KEY"),
-        "NEWSDATA_API_KEY": os.getenv("NEWSDATA_API_KEY")
+      #  "NEWSCATCHER_API_KEY": os.getenv("NEWSCATCHER_API_KEY"),
+      #  "CURRENTS_API_KEY": os.getenv("CURRENTS_API_KEY"),
+      #  "GNEWS_API_KEY": os.getenv("GNEWS_API_KEY"),
+     #   "NEWSDATA_API_KEY": os.getenv("NEWSDATA_API_KEY")
     }
     
     print("API Keys loaded:")
@@ -68,10 +68,10 @@ async def main():
     
     sources = [
         (NewsAPISource(api_keys["NEWS_API_KEY"]), "NewsAPI"),
-        (NewsDataSource(api_keys["NEWSCATCHER_API_KEY"]), "NewsCatcher"),
-        (CurrentsSource(api_keys["CURRENTS_API_KEY"]), "Currents"),
-        (GNewsSource(api_keys["GNEWS_API_KEY"]), "GNews"),
-        (NewsData(api_keys["NEWSDATA_API_KEY"]), "NewsData")
+       # (NewsDataSource(api_keys["NEWSCATCHER_API_KEY"]), "NewsCatcher"),
+       # (CurrentsSource(api_keys["CURRENTS_API_KEY"]), "Currents"),
+       # (GNewsSource(api_keys["GNEWS_API_KEY"]), "GNews"),
+      #  (NewsData(api_keys["NEWSDATA_API_KEY"]), "NewsData")
     ]
 
     # Test each source with delay between tests

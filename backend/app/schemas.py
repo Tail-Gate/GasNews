@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 # User Schemas
@@ -27,7 +27,7 @@ class ArticleBase(BaseModel):
     image_url: Optional[str] = None
 
 class ArticleCreate(ArticleBase):
-    published_date: datetime = Field(default_factory=datetime.utcnow)
+    published_date: datetime = Field(default_factory=datetime.UTCnow)
 
 class Article(ArticleBase):
     id: int
@@ -51,7 +51,7 @@ class NewsArticleResponse(BaseModel):
 class NewsResponse(BaseModel):
     articles: List[NewsArticleResponse]
     total_count: int
-    fetch_time: datetime = Field(default_factory=datetime.utcnow)
+    fetch_time: datetime = Field(default_factory=datetime.UTCnow)
 
 # Bookmark Schemas
 class BookmarkRequest(BaseModel):

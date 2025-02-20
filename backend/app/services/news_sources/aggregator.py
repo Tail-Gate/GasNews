@@ -1,6 +1,6 @@
 from typing import List, Dict, Set, Optional, Any
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from difflib import SequenceMatcher
 import logging
 from collections import defaultdict
@@ -108,7 +108,7 @@ class NewsAggregator:
                         
                     # Add source tracking
                     article['source_name'] = source_name
-                    article['fetched_at'] = datetime.now(datetime.UTC).isoformat()
+                    article['fetched_at'] = datetime.now(timezone.utc).isoformat()
                     
                     valid_articles.append(article)
                     
@@ -197,7 +197,7 @@ class NewsAggregator:
         Args:
             older_than_hours: Number of hours after which to clear cached data
         """
-        cutoff_time = datetime.now(datetime.UTC) - timedelta(hours=older_than_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
         
         # Clear old titles
         self._seen_titles = {

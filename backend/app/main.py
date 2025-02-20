@@ -11,7 +11,7 @@ from .services.content_processing.embeddings import EmbeddingsService
 import os
 import logging
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import func, case  
 from passlib.context import CryptContext
 
@@ -28,10 +28,10 @@ logging.basicConfig(
 # Initialize news sources
 news_sources = [
     NewsAPISource(os.getenv("NEWS_API_KEY")),
-    NewsDataSource(os.getenv("NEWSCATCHER_API_KEY")),
-    CurrentsSource(os.getenv("CURRENTS_API_KEY")),
-    GNewsSource(os.getenv("GNEWS_API_KEY")),
-    NewsData(os.getenv("NEWSDATA_API_KEY"))
+   # NewsDataSource(os.getenv("NEWSCATCHER_API_KEY")),
+   # CurrentsSource(os.getenv("CURRENTS_API_KEY")),
+   # GNewsSource(os.getenv("GNEWS_API_KEY")),
+   # NewsData(os.getenv("NEWSDATA_API_KEY"))
 ]
 
 # Initialize services
@@ -520,7 +520,7 @@ async def submit_feedback(
         raise HTTPException(status_code=404, detail="Recommendation not found")
     
     recommendation.feedback_type = feedback.feedback_type
-    recommendation.feedback_timestamp = datetime.now(datetime.UTC)
+    recommendation.feedback_timestamp = datetime.now(timezone.utc)
     db.commit()
     
     return {"status": "success"}
@@ -557,7 +557,7 @@ async def submit_feedback(
         
         # Update recommendation with feedback
         recommendation.feedback_type = feedback.feedback_type
-        recommendation.feedback_timestamp = datetime.now(datetime.UTC)
+        recommendation.feedback_timestamp = datetime.now(timezone.utc)
         
         try:
             db.commit()
@@ -731,7 +731,7 @@ async def generate_recommendations(
                     similarity_score=similarity_score,
                     recommendation_type="similar",
                     features_used={"embedding_similarity": similarity_score},
-                    created_at=datetime.now(datetime.UTC)
+                    created_at=datetime.now(timezone.utc)
                 )
                 recommendations.append(recommendation)
                 seen_articles.add(similar_article.id)

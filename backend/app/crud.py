@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from . import models, schemas
 from typing import List, Optional
 from fastapi import HTTPException
@@ -27,7 +27,7 @@ def create_article(
         url=url,
         source=source,
         image_url=image_url,
-        published_date=published_date or datetime.utcnow()
+        published_date=published_date or datetime.now(timezone.utc)
     )
     
     db.add(db_article)
@@ -94,7 +94,7 @@ def create_bookmark(
     db_bookmark = models.Bookmark(
         user_id=user_id,
         article_id=article_id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(db_bookmark)
     db.commit()

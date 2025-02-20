@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 import aiohttp
 import asyncio
@@ -48,7 +48,7 @@ class CurrentsSource(BaseNewsSource):
             return []
 
         # Calculate date range (last 7 days)
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=7)
 
         params = {
@@ -106,7 +106,7 @@ class CurrentsSource(BaseNewsSource):
             'content': article.get('description', 'No content available'),
             'url': article.get('url', ''),
             'source': article.get('author', 'Unknown source'),
-            'published_date': article.get('published', datetime.utcnow().isoformat()),
+            'published_date': article.get('published', datetime.now(timezone.utc).isoformat()),
             'image_url': article.get('image', None)
         }
 

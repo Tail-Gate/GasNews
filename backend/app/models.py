@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, F
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import ARRAY
 from .database import Base
-from datetime import datetime, UTC
+from datetime import datetime, timezone, UTC
 import numpy as np
 
 class User(Base):
