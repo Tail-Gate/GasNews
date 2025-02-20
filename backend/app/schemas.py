@@ -27,7 +27,7 @@ class ArticleBase(BaseModel):
     image_url: Optional[str] = None
 
 class ArticleCreate(ArticleBase):
-    published_date: datetime = Field(default_factory=datetime.UTCnow)
+    published_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Article(ArticleBase):
     id: int
@@ -51,7 +51,7 @@ class NewsArticleResponse(BaseModel):
 class NewsResponse(BaseModel):
     articles: List[NewsArticleResponse]
     total_count: int
-    fetch_time: datetime = Field(default_factory=datetime.UTCnow)
+    fetch_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Bookmark Schemas
 class BookmarkRequest(BaseModel):
