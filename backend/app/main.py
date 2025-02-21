@@ -1116,12 +1116,16 @@ async def fetch_news(db: Session = Depends(get_db)):
             except Exception as e:
                 print(f"Error storing article: {str(e)}")
                 continue
+        
+        # If we have no articles, raise an exception
+        if not stored_articles:
+            raise Exception("No articles could be fetched or stored")
             
         return stored_articles
     except Exception as e:
         print(f"Error fetching news: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 # Add endpoint to check news sources status
 @app.get("/news-sources/status")
 def get_sources_status():

@@ -6,17 +6,23 @@ class NewsProcessor:
         seen_urls = set()
         
         for article in articles:
+            if not article.get('url'):
+                continue  # Skip articles without URL
+                
             if article['url'] not in seen_urls:
-                # Handle possible null values with defaults
+                # Handle different API response formats
+                content = article.get('content') or article.get('description') or 'No content available'
+                source_name = article.get('source', {}).get('name') if isinstance(article.get('source'), dict) else article.get('source')
+                
                 processed_article = {
-                    'title': article['title'] or 'No title available',
-                    'content': article['description'] or 'No content available',  # Using description instead of content
+                    'title': article.get('title') or 'No title available',
+                    'content': content,
                     'url': article['url'],
-                    'source': article['source']['name'] if article['source'] else 'Unknown source',
-                    'published_date': article['publishedAt'],
-                    'image_url': article.get('urlToImage')
+                    'source': source_name or 'Unknown source',
+                    'published_date': article.get('publishedAt') or article.get('published_date', datetime.now().isoformat()),
+                    'image_url': article.get('urlToImage') or article.get('image_url')
                 }
                 processed_articles.append(processed_article)
                 seen_urls.add(article['url'])
-                
+            
         return processed_articles
