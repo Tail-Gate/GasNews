@@ -511,76 +511,52 @@ async def submit_feedback(
     feedback: schemas.RecommendationFeedback,
     db: Session = Depends(get_db)
 ):
-    recommendation = db.query(models.RecommendationHistory).filter(
-        models.RecommendationHistory.recommended_article_id == article_id,
-        models.RecommendationHistory.user_id == feedback.user_id
-    ).first()
-    
-    if not recommendation:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
-    
-    recommendation.feedback_type = feedback.feedback_type
-    recommendation.feedback_timestamp = datetime.now(timezone.utc)
-    db.commit()
-    
-    return {"status": "success"}
-'''
-@router.post("/recommendations/{article_id}/feedback")
-async def submit_feedback(
-    article_id: int,
-    feedback: schemas.RecommendationFeedback,
-    db: Session = Depends(get_db)
-):
-    """Submit feedback (thumbs up/down) for a recommended article"""
+    """Submit feedback (thumbs up/down) for an article"""
     try:
-        # Log incoming request
-        print(f"Receiving feedback for article {article_id} from user {feedback.user_id}")
-        
-        # First check if recommendation exists
+        # First check if article exists
+        article = db.query(models.Article).filter(models.Article.id == article_id).first()
+        if not article:
+            raise HTTPException(status_code=404, detail=f"Article {article_id} not found")
+            
+        # Find if a recommendation exists
         recommendation = db.query(models.RecommendationHistory).filter(
             models.RecommendationHistory.recommended_article_id == article_id,
             models.RecommendationHistory.user_id == feedback.user_id
-        ).order_by(
-            models.RecommendationHistory.created_at.desc()
         ).first()
         
-        if not recommendation:
-            print(f"No recommendation found for article {article_id} and user {feedback.user_id}")
-            # Check if the article exists
-            article = db.query(models.Article).filter(models.Article.id == article_id).first()
-            if not article:
-                raise HTTPException(status_code=404, detail=f"Article {article_id} not found")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"No recommendation found for article {article_id} and user {feedback.user_id}"
+        if recommendation:
+            # Update existing recommendation
+            recommendation.feedback_type = feedback.feedback_type
+            recommendation.feedback_timestamp = datetime.now(timezone.utc)
+        else:
+            # Create a new recommendation history entry for this feedback
+            recommendation = models.RecommendationHistory(
+                source_article_id=article_id,  # Using same article as source for simplicity
+                recommended_article_id=article_id,
+                user_id=feedback.user_id,
+                similarity_score=1.0,  # Default value
+                recommendation_type="direct_feedback",
+                feedback_type=feedback.feedback_type,
+                feedback_timestamp=datetime.now(timezone.utc),
+                features_used={"direct_feedback": True}
             )
-        
-        # Update recommendation with feedback
-        recommendation.feedback_type = feedback.feedback_type
-        recommendation.feedback_timestamp = datetime.now(timezone.utc)
-        
-        try:
-            db.commit()
-            print(f"Successfully saved feedback for article {article_id}")
-        except Exception as e:
-            db.rollback()
-            print(f"Error saving feedback: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error saving feedback: {str(e)}")
+            db.add(recommendation)
+            
+        db.commit()
         
         return {
             "status": "success",
             "article_id": article_id,
-            "feedback_type": feedback.feedback_type,
-            "timestamp": recommendation.feedback_timestamp
+            "feedback_type": feedback.feedback_type
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         print(f"Unexpected error in feedback endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-    
-'''
+
 
 # Debugs the whole Recommendations pipeline
 @router.get("/debug/pipeline/{user_id}")
