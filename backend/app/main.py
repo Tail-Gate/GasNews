@@ -505,7 +505,7 @@ async def get_similar_articles(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/recommendations/{article_id}/feedback")
+@router.post("/{article_id}/feedback")
 async def submit_feedback(
     article_id: int,
     feedback: schemas.RecommendationFeedback,
